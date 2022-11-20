@@ -39,6 +39,11 @@ CMD_SET_PROFILE = "setprofile"
 CMD_ADD_PROFILE = "addprofile"
 CMD_CLEAR_PROFILES = "clearprofiles"
 
+MAX_PROFILE_LENGTH = 200
+MAX_PROFILES_PER_MEMBER = 10
+
+MAX_MESSAGE_LENGTH = 4096
+
 class BotData:
 	class MemberData(dict):
 		def __init__(self, firstName, lastName, username, profiles, timestamp):
@@ -63,6 +68,7 @@ class BotData:
 	chatData = {}				# Chat.Id -> ChatData
 	loadedChatData = {}		# Chat.Id -> TRUE
 	domainTags = {}			# DomainName -> Tag
+	memberSortOrder = []
 
 def onHelp(update, context):
 	#Recieved a help command
@@ -149,8 +155,11 @@ def onChatMemberEvent(update, context):
 		elif ( (statusChanges[0] != update.chat_member.old_chat_member.KICKED and statusChanges[0] != update.chat_member.old_chat_member.LEFT )
 			and ( statusChanges[1] == update.chat_member.new_chat_member.KICKED or statusChanges[1] == update.chat_member.new_chat_member.LEFT )):
 				removeMember(update.effective_chat, update.chat_member.new_chat_member.user)
-		elif ( statusChanges[0] == update.chat_member.old_chat_member.ADMINISTRATOR and statusChange[1] != update.chat_member.new_chat_member.ADMINISTRATOR ):
-			# User became admin, so reload auth. This ensures new admin check the current data
+		
+		if ( ( statusChanges[0] != update.chat_member.old_chat_member.ADMINISTRATOR and statusChanges[0] != update.chat_member.old_chat_member.CREATOR )
+			and ( statusChange[1] == update.chat_member.new_chat_member.ADMINISTRATOR or statusChanges[1] == update.chat_member.old_chat_member.CREATOR )):
+			# User became admin.
+			# Reload auth. This ensures new admin check the current data
 			loadAuthorisedUsers()
 
 def onMyChatMemberEvent(update, context):
@@ -358,6 +367,10 @@ def alterProfile(chat, user, profiles, asAddition):
 		profile = profile.strip()
 		profile = profile.rstrip(',/')
 
+		#Cap the profile length
+		if len(profile) > MAX_PROFILE_LENGTH:
+			continue
+
 		# URL sanitising
 		# Strip the scheme (storing if it was secure or not)
 		# Strip www. or m. as these shouldn't be needed and can cause issues if used wrong on some badly made sites
@@ -396,6 +409,10 @@ def alterProfile(chat, user, profiles, asAddition):
 
 		validProfiles.append(profile)
 		changesMade = True
+
+		# Cap the #profiles each member can have
+		if len(validProfiles) >= MAX_PROFILES_PER_MEMBER:
+			break
 
 	if changesMade == False:
 		return
@@ -523,6 +540,9 @@ def addMember(chat, user):
 		,timestamp = datetime.datetime.now().timestamp()
 	)
 
+	BotData.memberSortOrder.append(userIdStr)
+	sortMembers(chat)
+
 	saveChatData(chat)
 
 	return True
@@ -544,7 +564,31 @@ def removeMember(chat, user):
 	# Remove the MemberData for this member
 	chatData["memberData"].pop(userIdStr)
 
+	BotData.memberSortOrder.remove(userIdStr)
+	sortMembers(chat)
+
 	saveChatData(chat)
+
+def isMemberAdmin(chat, memberIdStr):
+	chatMember = chat.get_member(int(memberIdStr))
+	return (chatMember and (chatMember.status == chatMember.ADMINISTRATOR or chatMember.status == chatMember.CREATOR) )
+
+def memberSortCompare(chat, memberIdStr):
+	# TODO Admin at the top
+	
+	chatData = BotData.chatData[chat.id]
+
+	isAdmin = isMemberAdmin(chat, memberIdStr)
+	
+	# using (not isAdmin) as False is lower than True, and we want admin first
+	return (not isAdmin), chatData["memberData"][memberIdStr]["firstName"]
+
+def sortMembers(chat):
+	# If the ChatData for this chat does not exist, drop out
+	if not BotData.chatData.get(chat.id):
+		return False
+
+	BotData.memberSortOrder.sort(key=lambda memberIdStr: memberSortCompare(chat, memberIdStr))
 
 def isMemberListMessageId(chatId, messageId):
 	if not BotData.memberListMessageIds.get(chatId):
@@ -564,13 +608,31 @@ def updateMembersListMessage(chat):
 	chatData = BotData.chatData[chatId]
 
 	# Start forming the message text
+	# TODO determine potential split points, and if the message exceeds > MAX_MESSAGE_LENGTH, split the message at the last one.
+	# Repeat...
+	# Post a blank message for each part to get the IDs
+	# Add the ID for the next message onto the previous
+	# Edit the blank messages with the correct part
+
 	messageText = "<b><u>USERNAMES & PROFILES</u></b>\n\n"
 
 	# Add each (if any) member
-	if len(chatData["memberData"]) > 0:
-		for memberId in chatData["memberData"]:
+	if len(BotData.memberSortOrder) > 0:
+
+		listingAdmins = False
+
+		# Show the admin title if we need to
+		if isMemberAdmin(chat, BotData.memberSortOrder[0]):
+			messageText += "<b>ADMINS</b>\n\n"
+			listingAdmins = True
+
+		for memberId in BotData.memberSortOrder:
 			memberData = chatData["memberData"][memberId]
-			
+
+			if listingAdmins and not isMemberAdmin(chat, memberId):
+				messageText += "---------------\n\n"
+				listingAdmins = False
+		
 			# Add the name and username
 			displayName = ""
 			if not memberData["lastName"]:
@@ -595,11 +657,11 @@ def updateMembersListMessage(chat):
 
 				for profile in memberData["profiles"]:
 					foundTagAndUser = False
-					for domain in BotData.domainTags:						# bob.com
-						if domain in profile.casefold():			# bob.com in http://bob.com or http://bob.com/user or http://bob.com/users/user
+					for domain in BotData.domainTags:							# bob.com
+						if domain in profile.casefold():						# bob.com in http://bob.com or http://bob.com/user or http://bob.com/users/user
 							domainTag = "[" + BotData.domainTags[domain] + "] "
 
-							splitProfile = profile.rsplit('/', 1)			# http:/ | bob.com or http://bob.com | user or http://bob.com/users | user
+							splitProfile = profile.rsplit('/', 1)				# http:/ | bob.com or http://bob.com | user or http://bob.com/users | user
 							if len(splitProfile) == 2:
 								# Show the username
 								foundTagAndUser = True
@@ -613,7 +675,7 @@ def updateMembersListMessage(chat):
 				messageText += "\n"
 
 	# Add a message saying what to do
-	messageText += "---------------\n"
+	messageText += "---------------\n\n"
 	messageText += "To list profiles under your name, reply to this message with their URLs.\n"
 	messageText += "\nFor more details click or type \"/help\""
 
@@ -674,6 +736,8 @@ def updateMember(chat, user):
 		memberData["username"] = user.username
 		membersListRequiresUpdate = True
 
+	# TODO: Sort Members?
+
 	# We always want the time to update. If we didn't we could just not save if membersListRequiresUpdate was false
 	memberData["timestamp"] = datetime.datetime.now().timestamp()
 
@@ -728,6 +792,13 @@ def loadChatData(chat):
 	if os.path.isfile(filePath):
 		with open(filePath, 'r') as file:
 			BotData.chatData[chatId] = json.load(file)
+
+	# TODO: Fill out based on what loaded
+	BotData.memberSortOrder.clear()
+	for memberId in BotData.chatData[chatId]["memberData"]:
+		BotData.memberSortOrder.append(memberId)
+
+	sortMembers(chat)
 
 	# Ensure the member list message shows the latest Members
 	updateMembersListMessage(chat)
