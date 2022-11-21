@@ -64,7 +64,7 @@ class BotData:
 				,memberData = {} # "User.Id" -> MemberData
 			)
 
-	memberListMessageIds = {}	# Chat.Id -> MemberListMessageId
+	memberListMessagesIds = {}	# Chat.Id -> MemberListMessageIds[]
 	authorisedUsers = {}		# "User.Id" -> TRUE
 	chatData = {}				# Chat.Id -> ChatData
 	loadedChatData = {}		# Chat.Id -> TRUE
@@ -509,8 +509,8 @@ def addChat(chat):
 
 def removeChat(chatId):
 	# Remove the message id, and say we have removed the data, but actually don't bother
-	if BotData.memberListMessageIds.get(chatId):
-		BotData.memberListMessageIds.pop(chatId)
+	if BotData.memberListMessagesIds.get(chatId):
+		BotData.memberListMessagesIds.pop(chatId)
 
 	if BotData.loadedChatData.get(chatId):
 		BotData.loadedChatData.pop(chatId)
@@ -596,10 +596,11 @@ def sortMembers(chat):
 	BotData.memberSortOrder.sort(key=lambda memberIdStr: memberSortCompare(chat, memberIdStr))
 
 def isMemberListMessageId(chatId, messageId):
-	if not BotData.memberListMessageIds.get(chatId):
+	memberListMessageIds = BotData.memberListMessagesIds.get(chatId)
+	if not memberListMessageIds:
 		return False
 
-	return (BotData.memberListMessageIds.get(chatId) == messageId)
+	return (messageId in memberListMessageIds)
 
 def updateMembersListMessage(chat):
 	chatId = chat.id
@@ -709,6 +710,27 @@ def updateMembersListMessage(chat):
 
 	# TODO
 	# If there is only one page, edit the posted message or post a new one if none existed
+	memberListMessageIds = BotData.memberListMessagesIds.get(chatId)
+	messageToPageCountDifference = messagePageCount - len(memberListMessageIds)
+	if messageToPageCountDifference > 0:
+		# Add pinned messages
+		for newMessageCount in range(0, messageToPageCountDifference):
+			message = sendSimpleMessage(chat.bot, chatId, "")
+			memberListMessageIds.append(message.message_id)
+	elif messageToPageCountDifference < 0:
+		# Delete pinned messages
+		for deleteMessageIndex in range(0, -messageToPageCountDifference):
+			# TODO delete the message
+			memberListMessageIds.remove(deleteMessageIndex)
+
+	# We now have the correct amount of messages, so store them then edit them posting out each page
+	BotData.memberListMessagesIds[chatId] = memberListMessageIds
+
+	# No need to call save here to store the m_memberListMessageId
+	# as this function is called from the save function to ensure it's all upto date.
+	# So when the first save occurs, this would have been set and would have been saved
+
+
 	# If the number of stored messages > number of pages, delete the extra and remove the IDs
 	# else post a blank message for each extra needed and store their message IDs
 
@@ -720,33 +742,22 @@ def updateMembersListMessage(chat):
 	# Add a message saying what to do
 	messageText += endOfMessageText
 
-
-
-
-
-	# If there isn't yet a pinned message
-	if not BotData.memberListMessageIds.get(chatId):
-		message = sendSimpleMessage(chat.bot, chatId, messageText)
-
-		# No need to call save here to store the m_memberListMessageId
-		# as this function is called from the save function to ensure it's all upto date.
-		# So when the first save occurs, this would have been set and would have been saved
-		BotData.memberListMessageIds[chatId] = message.message_id
-	else:
-		# Edit Message
+	# Edit Messages
+	for messageId in memberListMessageIds:
 		try:
 			chat.bot.edit_message_text(
 				messageText
 				, chat_id = chatId
-				, message_id = BotData.memberListMessageIds.get(chatId)
+				, message_id = messageId
 				, parse_mode = ParseMode.HTML
 				, disable_web_page_preview = True
 			)
+
+			# Pin message even if it already is, as we can not tell if it isn't.
+			chat.bot.pin_chat_message(chatId, messageId, disable_notification = True)
+
 		except Exception:
 			pass
-
-	# Pin message even if it already is, as we can not tell if it isn't.
-	chat.bot.pin_chat_message(chatId, BotData.memberListMessageIds.get(chatId), disable_notification = True)
 
 def updateMember(chat, user):
 	if user == None:
