@@ -39,6 +39,7 @@ CMD_SET_PROFILE = "setprofile"
 CMD_ADD_PROFILE = "addprofile"
 CMD_CLEAR_PROFILES = "clearprofiles"
 
+MAX_TAG_LENGTH = 10
 MAX_PROFILE_LENGTH = 200
 MAX_PROFILES_PER_MEMBER = 10
 
@@ -157,7 +158,7 @@ def onChatMemberEvent(update, context):
 				removeMember(update.effective_chat, update.chat_member.new_chat_member.user)
 		
 		if ( ( statusChanges[0] != update.chat_member.old_chat_member.ADMINISTRATOR and statusChanges[0] != update.chat_member.old_chat_member.CREATOR )
-			and ( statusChange[1] == update.chat_member.new_chat_member.ADMINISTRATOR or statusChanges[1] == update.chat_member.old_chat_member.CREATOR )):
+			and ( statusChanges[1] == update.chat_member.new_chat_member.ADMINISTRATOR or statusChanges[1] == update.chat_member.old_chat_member.CREATOR )):
 			# User became admin.
 			# Reload auth. This ensures new admin check the current data
 			loadAuthorisedUsers()
@@ -237,6 +238,10 @@ def onAddTag(update, context):
 
 	domain = splitCommand[1].casefold()
 	tag = splitCommand[2]
+
+	if leg(tag) > MAX_TAG_LENGTH:
+		sendSimpleMessage(update.effective_chat.bot, update.effective_chat.id, "Failed to add tag - too long (Max = " + MAX_TAG_LENGTH + ")")
+		return False
 
 	if any(elem in "/\\@" for elem in domain):
 		sendSimpleMessage(update.effective_chat.bot, update.effective_chat.id, "Failed to add tag - invalid domain")
@@ -614,7 +619,7 @@ def updateMembersListMessage(chat):
 	# Add the ID for the next message onto the previous
 	# Edit the blank messages with the correct part
 
-	messagePages = []
+	messagePages = [""]
 	messagePageCount = 0
 	messagePageLength = 0
 
@@ -690,11 +695,13 @@ def updateMembersListMessage(chat):
 			potentialPageLength = messagePageLength + messageSegmentLength 
 			if potentialPageLength < maxPageLength:
 				messagePages[messagePageCount] += pageMessageText
-				messagePageLength = newPageLength
+				messagePageLength = potentialPageLength
 			else:
 				messagePageCount += 1
-				messagePages[messagePageCount] = pageMessageText
+				messagePages.append(pageMessageText)
 				messagePageLength = messageSegmentLength
+
+			pageMessageText = ""
 
 	
 
@@ -711,7 +718,7 @@ def updateMembersListMessage(chat):
 	messageText = messagePages[0]
 
 	# Add a message saying what to do
-	messageText + endOfMessageText
+	messageText += endOfMessageText
 
 
 
