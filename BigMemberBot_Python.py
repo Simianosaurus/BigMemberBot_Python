@@ -793,10 +793,11 @@ def loadChatData(chat):
 		with open(filePath, 'r') as file:
 			BotData.chatData[chatId] = json.load(file)
 
-	# TODO: Fill out based on what loaded
+	# Fill out based on what loaded
 	BotData.memberSortOrder.clear()
-	for memberId in BotData.chatData[chatId]["memberData"]:
-		BotData.memberSortOrder.append(memberId)
+	if BotData.chatData:
+		for memberId in BotData.chatData[chatId]["memberData"]:
+			BotData.memberSortOrder.append(memberId)
 
 	sortMembers(chat)
 
