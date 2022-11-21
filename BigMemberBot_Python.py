@@ -621,7 +621,7 @@ def updateMembersListMessage(chat):
 	# Edit the blank messages with the correct part
 
 	messagePages = [""]
-	messagePageCount = 0
+	messagePageCount = 1
 	messagePageLength = 0
 
 	# A message at the end saying what to do
@@ -630,7 +630,7 @@ def updateMembersListMessage(chat):
 	endOfMessageText += "\nFor more details click or type \"/help\""
 	endOfMessageLength = len(endOfMessageText)
 
-	maxPageLength = MAX_MESSAGE_LENGTH - endOfMessageLength
+	maxPageLength = 1000#MAX_MESSAGE_LENGTH - endOfMessageLength
 
 	pageMessageText = "<b><u>USERNAMES & PROFILES</u></b>\n\n"
 
@@ -695,7 +695,7 @@ def updateMembersListMessage(chat):
 			messageSegmentLength = len(pageMessageText)
 			potentialPageLength = messagePageLength + messageSegmentLength 
 			if potentialPageLength < maxPageLength:
-				messagePages[messagePageCount] += pageMessageText
+				messagePages[messagePageCount-1] += pageMessageText
 				messagePageLength = potentialPageLength
 			else:
 				messagePageCount += 1
@@ -704,24 +704,29 @@ def updateMembersListMessage(chat):
 
 			pageMessageText = ""
 
-	
-
-
-
-	# TODO
 	# If there is only one page, edit the posted message or post a new one if none existed
 	memberListMessageIds = BotData.memberListMessagesIds.get(chatId)
-	messageToPageCountDifference = messagePageCount - len(memberListMessageIds)
+	messageToPageCountDifference = 0
+	if memberListMessageIds:
+		messageToPageCountDifference = messagePageCount - len(memberListMessageIds)
+	else:
+		messageToPageCountDifference = messagePageCount
+
+	# If the number of stored messages > number of pages, delete the extra and remove the IDs
+	# else post a blank message for each extra needed and store their message IDs
 	if messageToPageCountDifference > 0:
-		# Add pinned messages
+		# Add messages
 		for newMessageCount in range(0, messageToPageCountDifference):
-			message = sendSimpleMessage(chat.bot, chatId, "")
-			memberListMessageIds.append(message.message_id)
+			message = sendSimpleMessage(chat.bot, chatId, "Usernames Page: " + str(newMessageCount))
+			if not memberListMessageIds:
+				memberListMessageIds = [message.message_id]
+			else:
+				memberListMessageIds.append(message.message_id)
 	elif messageToPageCountDifference < 0:
 		# Delete pinned messages
 		for deleteMessageIndex in range(0, -messageToPageCountDifference):
-			# TODO delete the message
-			memberListMessageIds.remove(deleteMessageIndex)
+			chat.bot.delete_message(chat_id = chatId, message_id = memberListMessageIds[deleteMessageIndex])
+			memberListMessageIds.pop(deleteMessageIndex)
 
 	# We now have the correct amount of messages, so store them then edit them posting out each page
 	BotData.memberListMessagesIds[chatId] = memberListMessageIds
@@ -730,34 +735,32 @@ def updateMembersListMessage(chat):
 	# as this function is called from the save function to ensure it's all upto date.
 	# So when the first save occurs, this would have been set and would have been saved
 
-
-	# If the number of stored messages > number of pages, delete the extra and remove the IDs
-	# else post a blank message for each extra needed and store their message IDs
-
 	# for each page except the last post a link to the next
 	# for the last post the endOfMessageText 
+	for messageIdIndex in range(0, messagePageCount):
+		if messageIdIndex < messagePageCount-1:
+			# Add a link to the next page
+			messagePages[messageIdIndex] += "---------------\n"
+			messagePages[messageIdIndex] += "<i><a href=\"https://t.me/c/" + str(chatId)[4:] + "/" + str(memberListMessageIds[messageIdIndex + 1]) + "\">Next Page</a></i>"
+		else:
+			# Add a message saying what to do
+			messagePages[messageIdIndex] += endOfMessageText
 
-	messageText = messagePages[0]
-
-	# Add a message saying what to do
-	messageText += endOfMessageText
-
-	# Edit Messages
-	for messageId in memberListMessageIds:
+		# Edit Messages
 		try:
 			chat.bot.edit_message_text(
-				messageText
+				messagePages[messageIdIndex]
 				, chat_id = chatId
-				, message_id = messageId
+				, message_id = memberListMessageIds[messageIdIndex]
 				, parse_mode = ParseMode.HTML
 				, disable_web_page_preview = True
 			)
-
-			# Pin message even if it already is, as we can not tell if it isn't.
-			chat.bot.pin_chat_message(chatId, messageId, disable_notification = True)
-
 		except Exception:
 			pass
+
+	# Pin first message even if it already is, as we can not tell if it isn't.
+	chat.bot.pin_chat_message(chatId, memberListMessageIds[0], disable_notification = True)
+
 
 def updateMember(chat, user):
 	if user == None:
