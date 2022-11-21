@@ -614,7 +614,19 @@ def updateMembersListMessage(chat):
 	# Add the ID for the next message onto the previous
 	# Edit the blank messages with the correct part
 
-	messageText = "<b><u>USERNAMES & PROFILES</u></b>\n\n"
+	messagePages = []
+	messagePageCount = 0
+	messagePageLength = 0
+
+	# A message at the end saying what to do
+	endOfMessageText = "---------------\n\n"
+	endOfMessageText += "To list profiles under your name, reply to this message with their URLs.\n"
+	endOfMessageText += "\nFor more details click or type \"/help\""
+	endOfMessageLength = len(endOfMessageText)
+
+	maxPageLength = MAX_MESSAGE_LENGTH - endOfMessageLength
+
+	pageMessageText = "<b><u>USERNAMES & PROFILES</u></b>\n\n"
 
 	# Add each (if any) member
 	if len(BotData.memberSortOrder) > 0:
@@ -623,14 +635,14 @@ def updateMembersListMessage(chat):
 
 		# Show the admin title if we need to
 		if isMemberAdmin(chat, BotData.memberSortOrder[0]):
-			messageText += "<b>ADMINS</b>\n\n"
+			pageMessageText += "<b>ADMINS</b>\n\n"
 			listingAdmins = True
 
 		for memberId in BotData.memberSortOrder:
 			memberData = chatData["memberData"][memberId]
 
 			if listingAdmins and not isMemberAdmin(chat, memberId):
-				messageText += "---------------\n\n"
+				pageMessageText += "---------------\n\n"
 				listingAdmins = False
 		
 			# Add the name and username
@@ -642,18 +654,19 @@ def updateMembersListMessage(chat):
 			else:
 				displayName = memberData["firstName"] + " " + memberData["lastName"]
 
-			messageText += "<b><a href = \"tg://user?id=" + str(memberId) + "\">" + displayName + "</a>"
+			# Member Text
+			pageMessageText += "<b><a href = \"tg://user?id=" + str(memberId) + "\">" + displayName + "</a>"
 			if memberData["username"]:
-				messageText += " - @" + memberData["username"]
+				pageMessageText += " - @" + memberData["username"]
 
-			messageText += "</b>"
+			pageMessageText += "</b>"
 
 			if len(memberData["profiles"]) == 0:
 				# Shift down ready for the next text
-				messageText += "\n\n"
+				pageMessageText += "\n\n"
 			else:
 				# Add each of the members profiles
-				messageText += "\n"
+				pageMessageText += "\n"
 
 				for profile in memberData["profiles"]:
 					foundTagAndUser = False
@@ -665,19 +678,44 @@ def updateMembersListMessage(chat):
 							if len(splitProfile) == 2:
 								# Show the username
 								foundTagAndUser = True
-								messageText += domainTag + "<i><a href=\"" + profile + "\">" + splitProfile[1] + "</a></i>\n"	# user
+								pageMessageText += domainTag + "<i><a href=\"" + profile + "\">" + splitProfile[1] + "</a></i>\n"	# user
 							break
 					
 					if foundTagAndUser == False:
 						# Show the full profile
-						messageText += "<i><a href=\"" + profile + "\">" + profile + "</a></i>\n"			# http://bob.com
+						pageMessageText += "<i><a href=\"" + profile + "\">" + profile + "</a></i>\n"			# http://bob.com
 
-				messageText += "\n"
+			# Ensure the text segment has space to be added to the page
+			messageSegmentLength = len(pageMessageText)
+			potentialPageLength = messagePageLength + messageSegmentLength 
+			if potentialPageLength < maxPageLength:
+				messagePages[messagePageCount] += pageMessageText
+				messagePageLength = newPageLength
+			else:
+				messagePageCount += 1
+				messagePages[messagePageCount] = pageMessageText
+				messagePageLength = messageSegmentLength
+
+	
+
+
+
+	# TODO
+	# If there is only one page, edit the posted message or post a new one if none existed
+	# If the number of stored messages > number of pages, delete the extra and remove the IDs
+	# else post a blank message for each extra needed and store their message IDs
+
+	# for each page except the last post a link to the next
+	# for the last post the endOfMessageText 
+
+	messageText = messagePages[0]
 
 	# Add a message saying what to do
-	messageText += "---------------\n\n"
-	messageText += "To list profiles under your name, reply to this message with their URLs.\n"
-	messageText += "\nFor more details click or type \"/help\""
+	messageText + endOfMessageText
+
+
+
+
 
 	# If there isn't yet a pinned message
 	if not BotData.memberListMessageIds.get(chatId):
@@ -735,8 +773,6 @@ def updateMember(chat, user):
 	if memberData["username"] != user.username:
 		memberData["username"] = user.username
 		membersListRequiresUpdate = True
-
-	# TODO: Sort Members?
 
 	# We always want the time to update. If we didn't we could just not save if membersListRequiresUpdate was false
 	memberData["timestamp"] = datetime.datetime.now().timestamp()

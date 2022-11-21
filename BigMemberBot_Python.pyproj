@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>a36a41be-7a4a-490f-a4c6-0dfeeac807d6</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>BigMemberBot_Python.py</StartupFile>
+    <StartupFile>api\BigMemberBot_Python.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -21,7 +21,13 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="BigMemberBot_Python.py" />
+    <Compile Include="api\BigMemberBot_Python.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="api\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="requirements.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
